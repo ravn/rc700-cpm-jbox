@@ -39,11 +39,14 @@ l70d0
 
 ```
 
-To save new state in REZ.COM use
+To save new state for REZ.COM and an updated assembly file, use
 
 ```
 sroa.ctl
 sroa.sym
+sroa.asm
+l7000,7795
+z
 
 ```
 
