@@ -13,5 +13,5 @@
 7795,E
 7FD0,B
 
-7FD7 w7FD7
-7
+	POP	AF
+	EI
