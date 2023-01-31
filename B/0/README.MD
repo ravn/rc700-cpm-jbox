@@ -6,6 +6,7 @@ Z80 book: http://www.z80.info/zip/programming_the_z80_3rd_edition.pdf
 
 Z80ASM manual:  https://oldcomputers.dyndns.org/public/pub/manuals/z80asm.pdf
 
+RASM manual: http://www.roudoudou.com/rasm/rasm_v112_en.pdf
 
 # RC702 boot prom
 
