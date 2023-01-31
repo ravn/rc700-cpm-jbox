@@ -85,5 +85,13 @@ Original is in CONFIORG.COM.
 Old, almost complete disassembly in CONFI.Z80 (using Z80ASM instead of M80)
 
 ```
-z80asm confi
+z80asm confi/fxs
 ```
+(cannot generate symbol file)
+
+RASM (https://github.com/EdouardBERGE/rasm) assembles but it is unclear how to create symbol file for ZSID. 
+
+```
+cp ~/git/RunCPM/RunCPM/C/0/CONFI.Z80 . ; ../rasm -ob CONFI.COM CONFI.Z80; diff CONFIORG.COM CONFI.COM -s
+```
+
