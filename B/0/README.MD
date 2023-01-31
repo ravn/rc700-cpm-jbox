@@ -1,5 +1,12 @@
 Downloaded files from http://www.jbox.dk/rc702/source/
 
+# Documentation
+
+Z80 book: http://www.z80.info/zip/programming_the_z80_3rd_edition.pdf
+
+Z80ASM manual:  https://oldcomputers.dyndns.org/public/pub/manuals/z80asm.pdf
+
+
 # RC702 boot prom
 
 ROA375.ROM is the RC702 prom.
@@ -80,7 +87,7 @@ z
 
 # CONFI - configuration utility
 
-Original is in CONFIORG.COM.
+Original is in CONFIORG.COM.  Note:  This is one I appear to have patched back then for a better US-keyboard.
 
 Old, almost complete disassembly in CONFI.Z80 (using Z80ASM instead of M80)
 
