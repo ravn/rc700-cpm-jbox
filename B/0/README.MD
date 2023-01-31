@@ -1,5 +1,7 @@
 Downloaded files from http://www.jbox.dk/rc702/source/
 
+# RC702 boot prom
+
 ROA375.ROM is the RC702 prom.
 
 To manually execute the relocate to $7000:
@@ -45,7 +47,7 @@ To save new state and an updated assembly file, use
 sroa375b.ctl
 sroa375b.sym
 sroa375b.asm
-l7000,7795
+ql7000,7795
 z
 
 ```
@@ -74,4 +76,14 @@ sroa375a.asm
 l0,27
 z
 
+```
+
+# CONFI - configuration utility
+
+Original is in CONFIORG.COM.
+
+Old, almost complete disassembly in CONFI.Z80 (using Z80ASM instead of M80)
+
+```
+z80asm confi
 ```
