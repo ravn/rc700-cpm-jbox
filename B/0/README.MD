@@ -26,25 +26,25 @@ The final list should show something along:
 ```
 
 
-REZ has the relocated ROA375 PROM in its correct location with these commands. 
+REZ has the relocated ROA375 PROM in its correct location with these commands.   (The AE97 offset is because the boot prom starts moving its payload from to $7000 and then jumps to $70D0)
 
 ```
 rez
 oae97
 rroa.com
 o4000
-rroa.ctl
-rroa.sym
+rroa375b.ctl
+rroa375b.sym
 l70d0
 
 ```
 
-To save new state for REZ.COM and an updated assembly file, use
+To save new state and an updated assembly file, use
 
 ```
-sroa.ctl
-sroa.sym
-sroa.asm
+sroa375b.ctl
+sroa375b.sym
+sroa375b.asm
 l7000,7795
 z
 
@@ -52,3 +52,26 @@ z
 
 and exit with Ctrl-C.
 
+For the "move boot loader payload and jump" bit use:
+
+```
+rez
+o4000
+rroa.com
+o4100
+rroa375a.ctl
+rroa375a.sym
+l0
+
+```
+
+and
+
+```
+sroa375a.ctl
+sroa375a.sym
+sroa375a.asm
+l0,27
+z
+
+```
