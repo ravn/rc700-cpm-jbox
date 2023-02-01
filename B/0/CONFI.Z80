@@ -607,44 +607,56 @@ MULT50HL:
 	RET
 HLDIV50:	
 	LD	DE,1
-	LD	BC,0FFCEH	;-50
-L049D:	
+	LD	BC,-50
+HLDIV50B:	
 	ADD	HL,BC
 	LD	A,H
 	OR	L
-	JR	Z,HLDIB50C
+	JR	Z,HLDIV50C
 	INC	DE
-	JR	L049D
-HLDIB50C:	
+	JR	HLDIV50B
+HLDIV50C:	
 	EX	DE,HL
 	RET
+
+;
+; Print out HL as a decimal number (>0).
+; Leading zeroes are not printed.
+;
 PRINTHLDEC:	
 	LD	B,0
-	LD	DE,2710H	;10000
+	LD	DE,10000
 	CALL	PRINTHLDIVDE
-	LD	DE,03E8H	;1000
+	LD	DE,1000
 	CALL	PRINTHLDIVDE
-	LD	DE,64H	;100
+	LD	DE,100
 	CALL	PRINTHLDIVDE
-	LD	DE,0AH	;10
+	LD	DE,10
 	CALL	PRINTHLDIVDE
 	LD	DE,1
+
+; Print as an ASCII digit number of times DE can be divided into
+; current value of HL (which contains the remainder 
+; afterwards).
+; Leading zeroes are suppressed (B=0) until
+; first non-zero digit is printed (B=1).
+
 PRINTHLDIVDE:	
 	LD	C,'0'
-PRINTHL2:	
-	OR	A
-	SBC	HL,DE
-	JR	C,PRINTHL3
-	INC	C
-	JR	PRINTHL2
+PRINTHL2:			; 
+	OR	A		; //reset carry for SBC
+	SBC	HL,DE		; subtract 10000/1000/100/10/1
+	JR	C,PRINTHL3	; if negative exit loop
+	INC	C		; 
+	JR	PRINTHL2	; 
 PRINTHL3:	
-	ADD	HL,DE
-	LD	A,'0'
+	ADD	HL,DE		; add back again to get remainder
+	LD	A,'0'		
 	CP	C
-	JR	Z,PRINTHL4
-	LD	B,1
+	JR	Z,PRINTHL4	 
+	LD	B,1		; non-zero digit, so don't suppress zeroes anymore
 PRINTHL4:	
-	XOR	A	;PRINT CHAR IN C, IFF B != 0
+	XOR	A	;PRINT CHAR IN C, IFF B = 1
 	CP	B
 	PUSH	AF
 	PUSH	HL
@@ -678,7 +690,7 @@ GETCHOICE:
 	LD	A,(HL)
 	LD	(CMDLEN),A
 	OR	A
-	JR	Z,PRINTCRLF	;RETURN ON CR
+	JR	Z,PRINTCRLF	;RETURN ON EMPTY COMMAND
 	INC	HL
 	LD	(CMDPTR),HL
 MENUNEXTCH:	
@@ -746,25 +758,36 @@ CMDLEN:
 	DB	0
 CMDNUMBER:	
 	DB	0,0
+
+; Jump to menu entry chosen stored in HL (1..) in 
+; table stored right after the CALL instruction.
+;  
+
 JUMPJPTABLE:	
-	POP	DE
+	POP	DE	; DE = [return address + 2*(HL-1)]
 	DEC	HL
 	ADD	HL,HL
 	ADD	HL,DE
 	LD	E,(HL)
 	INC	HL
 	LD	D,(HL)
-	EX	DE,HL
+	EX	DE,HL	; Jump to adress in DE.
 	JP	(HL)
+
+; A=  current menu entry selected.
+; HL= zero-terminated menu text to print
+; (ASCII 6 is gotoxy - respecting current XY-order)
+; (ASCII 5 is menu entry counter, print '*' when same as A)
+
 PRINTMENU:	
 	LD	(STARREDCMD),A
 PRINTNEXTHL:	
-	LD	A,(HL)
+	LD	A,(HL)		; ch = (HL), exit if zero
 	OR	A
 	RET	Z
-	CP	6	;HVIS ^F SAA UDSKRIV CURSORSAETNING
+	CP	6		; If 6 set cursor position from two next bytes.
 	CALL	Z,SETCURSORPOS
-	CP	5	;HVIS ^E SAA PREFIX MED '*' HVIS DET RIGTIGE NUMMER, ELLERS ' '
+	CP	5		; IF 5 then if (starredcmd -- = 0) then print '*' otherwise print ' '	
 	JP	NZ,PRINTPLAINCH
 	LD	A,(STARREDCMD)
 	DEC	A
@@ -772,7 +795,7 @@ PRINTNEXTHL:
 	OR	A
 	JP	P,PRINTSPACE
 	LD	A,'*'
-	LD	(STARREDCMD),A	;NO MORE CHECK ON '*'
+	LD	(STARREDCMD),A	; set current selection to 42.  This is probably not needed.
 	JP	PRINTPLAINCH
 PRINTSPACE:	
 	LD	A,' '
@@ -788,10 +811,16 @@ PRINTBDOS:
 	INC	HL
 	JR	PRINTNEXTHL
 PRINTBIOS:	
-	LD	C,A	;CONTROL CHARACTERS GOES HERE.
+	LD	C,A	; Char 1F is printed straight to BIOS.
 	CALL	BIOSCONOUT
 	INC	HL
 	JR	PRINTNEXTHL
+
+; ASCII 6 is GOTOXY, but if ADRMOD != 0 then 
+; the characters must be sent backwards.
+;
+; This may be a compatability thing with non-RC software.
+
 SETCURSORPOS:	
 	LD	C,A
 	CALL	BIOSCONOUT	;SEND ^F
@@ -831,137 +860,137 @@ BADSECTORMSG:
 	DB	'BAD SECTOR $'
 MENUMSG:	
 	DB	0CH
-	DB	6,'2%********** MENU **********',0AH,0DH
-	DB	6,'2',27H,'1: PRINTER PORT',0AH,0DH
-	DB	6,'2(2: TERMINAL PORT',0AH,0DH
-	DB	6,'2)3: CONVERSION',0AH,0DH
-	DB	6,'2*4: CURSOR',0AH,0DH
-	DB	6,'2+5: MINI MOTOR STOP TIMER',0AH,0DH
-	DB	6,'2,6: SAVE CONFIGURATION DESCRIPTION',0AH,0DH
-	DB	6,'2-',0
+	DB	6,50,37,'********** MENU **********',0AH,0DH
+	DB	6,50,39,'1: PRINTER PORT',0AH,0DH
+	DB	6,50,40,'2: TERMINAL PORT',0AH,0DH
+	DB	6,50,41,'3: CONVERSION',0AH,0DH
+	DB	6,50,42,'4: CURSOR',0AH,0DH
+	DB	6,50,43,'5: MINI MOTOR STOP TIMER',0AH,0DH
+	DB	6,50,44,'6: SAVE CONFIGURATION DESCRIPTION',0AH,0DH
+	DB	6,50,45,0
 	
 TERMMSG:	
-	DB	6,'2%',1FH
-	DB	6,'2%********* TERMINAL PORT *********',0AH,0DH
-	DB	6,'2',27H,'************* MENU **************',0AH,0DH
-	DB	6,'2)1: NUMBER OF STOP BITS PR. CHARACTER',0AH,0DH
-	DB	6,'2*2: PARITY',0AH,0DH
-	DB	6,'2+3: BAUDRATE',0AH,0DH
-	DB	6,'2,4: NUMBER OF BITS PR. CHARACTER TO TRANSMIT',0AH,0DH
-	DB	6,'2-5: NUMBER OF BITS PR. CHARACTER TO RECEIVE',0AH,0DH
-	DB	6,'2.',0
+	DB	6,50,37,1FH
+	DB	6,50,37,'********* TERMINAL PORT *********',0AH,0DH
+	DB	6,50,39,'************* MENU **************',0AH,0DH
+	DB	6,50,41,'1: NUMBER OF STOP BITS PR. CHARACTER',0AH,0DH
+	DB	6,50,42,'2: PARITY',0AH,0DH
+	DB	6,50,43,'3: BAUDRATE',0AH,0DH
+	DB	6,50,44,'4: NUMBER OF BITS PR. CHARACTER TO TRANSMIT',0AH,0DH
+	DB	6,50,45,'5: NUMBER OF BITS PR. CHARACTER TO RECEIVE',0AH,0DH
+	DB	6,50,46,0
 	
 CURSFORMMSG:	
-	DB	6,'2&',1FH
-	DB	6,'2',27H,'******** FORMAT ********',0AH,0DH
-	DB	6,'1)',5,'1: BLINKING REVERSE VIDEO',0AH,0DH
-	DB	6,'1*',5,'2: BLINKING UNDERLINE',0AH,0DH
-	DB	6,'1+',5,'3: REVERSE VIDEO',0AH,0DH
-	DB	6,'1,',5,'4: UNDERLINE',0AH,0DH
-	DB	6,'2-',0
+	DB	6,50,38,1FH
+	DB	6,50,39,'******** FORMAT ********',0AH,0DH
+	DB	6,49,41,5,'1: BLINKING REVERSE VIDEO',0AH,0DH
+	DB	6,49,42,5,'2: BLINKING UNDERLINE',0AH,0DH
+	DB	6,49,43,5,'3: REVERSE VIDEO',0AH,0DH
+	DB	6,49,44,5,'4: UNDERLINE',0AH,0DH
+	DB	6,50,45,0
 	
 KBMSG:	
-	DB	6,'2%',1FH
-	DB	6,'2%******** CONVERSION TABLE ********',0AH,0DH
-	DB	6,'1',"'",5,'1: DANISH',0AH,0DH
-	DB	6,'1(',5,'2: SWEDISH',0AH,0DH
-	DB	6,'1)',5,'3: GERMAN',0AH,0DH
-	DB	6,'1*',5,'4: UK-ASCII',0AH,0DH
-	DB	6,'1+',5,'5: US+WS-Th',0AH,0DH
-	DB	6,'1,',5,'6: FRENCH',0AH,0DH
-	DB	6,'1-',5,'7: LIBRARY',0AH,0DH
-	DB	6,'2.',0
+	DB	6,50,37,1FH
+	DB	6,50,37,'******** CONVERSION TABLE ********',0AH,0DH
+	DB	6,49,39,5,'1: DANISH',0AH,0DH
+	DB	6,49,40,5,'2: SWEDISH',0AH,0DH
+	DB	6,49,41,5,'3: GERMAN',0AH,0DH
+	DB	6,49,42,5,'4: UK-ASCII',0AH,0DH
+	DB	6,49,43,5,'5: US+WS-Th',0AH,0DH
+	DB	6,49,44,5,'6: FRENCH',0AH,0DH
+	DB	6,49,45,5,'7: LIBRARY',0AH,0DH
+	DB	6,50,46,0
 	
 STOPBITSMSG:	
-	DB	6,'2&',1FH
-	DB	6,'2',27H,'******** STOPBITS ********',0AH,0DH
-	DB	6,'1)',5,'1: 1 BIT',0AH,0DH
-	DB	6,'1*',5,'2: 1.5 BIT',0AH,0DH
-	DB	6,'1+',5,'3: 2 BIT',0AH,0DH
-	DB	6,'2,'
+	DB	6,50,38,1FH
+	DB	6,50,39,'******** STOPBITS ********',0AH,0DH
+	DB	6,49,41,5,'1: 1 BIT',0AH,0DH
+	DB	6,49,42,5,'2: 1.5 BIT',0AH,0DH
+	DB	6,49,43,5,'3: 2 BIT',0AH,0DH
+	DB	6,50,44
 	DB	0
 PARITYMSG:	
-	DB	6,'2&',1FH
-	DB	6,'2',27H,'******** PARITY ********',0AH,0DH
-	DB	6,'1)',5,'1: EVEN',0AH,0DH
-	DB	6,'1*',5,'2: NO',0AH,0DH
-	DB	6,'1+',5,'3: ODD',0AH,0DH
-	DB	6,'2,',0
+	DB	6,50,38,1FH
+	DB	6,50,39,'******** PARITY ********',0AH,0DH
+	DB	6,49,41,5,'1: EVEN',0AH,0DH
+	DB	6,49,42,5,'2: NO',0AH,0DH
+	DB	6,49,43,5,'3: ODD',0AH,0DH
+	DB	6,50,44,0
 	
 BAUDRATEMSG:	
-	DB	6,'2&',1FH
-	DB	6,'2',27H,'******** BAUDRATE ********',0AH,0DH
-	DB	6,'1)',5,' 1:     50 BPS',0AH,0DH
-	DB	6,'1*',5,' 2:     75 BPS',0AH,0DH
-	DB	6,'1+',5,' 3:    110 BPS',0AH,0DH
-	DB	6,'1,',5,' 4:    150 BPS',0AH,0DH
-	DB	6,'1-',5,' 5:    300 BPS',0AH,0DH
-	DB	6,'1.',5,' 6:    600 BPS',0AH,0DH
-	DB	6,'1/',5,' 7:   1200 BPS',0AH,0DH
-	DB	6,'10',5,' 8:   2400 BPS',0AH,0DH
-	DB	6,'11',5,' 9:   4800 BPS',0AH,0DH
-	DB	6,'12',5,'10:   9600 BPS',0AH,0DH
-	DB	6,'13',5,'11:  19200 BPS',0AH,0DH
-	DB	6,'24',0
+	DB	6,50,38,1FH
+	DB	6,50,39,'******** BAUDRATE ********',0AH,0DH
+	DB	6,49,41,5,' 1:     50 BPS',0AH,0DH
+	DB	6,49,42,5,' 2:     75 BPS',0AH,0DH
+	DB	6,49,43,5,' 3:    110 BPS',0AH,0DH
+	DB	6,49,44,5,' 4:    150 BPS',0AH,0DH
+	DB	6,49,45,5,' 5:    300 BPS',0AH,0DH
+	DB	6,49,46,5,' 6:    600 BPS',0AH,0DH
+	DB	6,49,47,5,' 7:   1200 BPS',0AH,0DH
+	DB	6,49,48,5,' 8:   2400 BPS',0AH,0DH
+	DB	6,49,49,5,' 9:   4800 BPS',0AH,0DH
+	DB	6,49,50,5,'10:   9600 BPS',0AH,0DH
+	DB	6,49,51,5,'11:  19200 BPS',0AH,0DH
+	DB	6,50,52,0
 	
 PRINTERMSG:	
-	DB	6,'2%',1FH
-	DB	6,'2%********* PRINTER PORT *********',0AH,0DH
-	DB	6,'2',27H,'************* MENU *************',0AH,0DH
-	DB	6,'2)1: STOPBIT',0AH,0DH
-	DB	6,'2*2: PARITY',0AH,0DH
-	DB	6,'2+3: BAUDRATE',0AH,0DH
-	DB	6,'2,4: BIT PR. CHARACTER',0AH,0DH
-	DB	6,'2-',0
+	DB	6,50,37,1FH
+	DB	6,50,37,'********* PRINTER PORT *********',0AH,0DH
+	DB	6,50,39,'************* MENU *************',0AH,0DH
+	DB	6,50,41,'1: STOPBIT',0AH,0DH
+	DB	6,50,42,'2: PARITY',0AH,0DH
+	DB	6,50,43,'3: BAUDRATE',0AH,0DH
+	DB	6,50,44,'4: BIT PR. CHARACTER',0AH,0DH
+	DB	6,50,45,0
 	
 ILLEGALMSG:	
-	DB	6,'@7',7,'*** ILLEGAL ***',0AH,0DH
+	DB	6,64,55,7,'*** ILLEGAL ***',0AH,0DH
 	DB	0
 	
 BITS2SENDMSG:	
-	DB	6,'2&',1FH
-	DB	6,'2',27H,'****** BITS/CHAR TRANSMITTER ******',0AH,0DH
-	DB	6,'1)',5,'1: 1 TO 5 BITS',0AH,0DH
-	DB	6,'1+',5,'3: 7 BITS',0AH,0DH
-	DB	6,'1*',5,'2: 6 BITS',0AH,0DH
-	DB	6,'1,',5,'4: 8 BITS',0AH,0DH
-	DB	6,'2-',0
+	DB	6,50,38,1FH
+	DB	6,50,39,'****** BITS/CHAR TRANSMITTER ******',0AH,0DH
+	DB	6,49,41,5,'1: 1 TO 5 BITS',0AH,0DH
+	DB	6,49,43,5,'3: 7 BITS',0AH,0DH
+	DB	6,49,42,5,'2: 6 BITS',0AH,0DH
+	DB	6,49,44,5,'4: 8 BITS',0AH,0DH
+	DB	6,50,45,0
 	
 RECSIZEMSG:	
-	DB	6,'2&',1FH
-	DB	6,'2',27H,'****** BITS/CHAR RECEIVER ******',0AH,0DH
-	DB	6,'1)',5,'1: 5 BITS',0AH,0DH
-	DB	6,'1+',5,'3: 7 BITS',0AH,0DH
-	DB	6,'1*',5,'2: 6 BITS',0AH,0DH
-	DB	6,'1,',5,'4: 8 BITS',0AH,0DH
-	DB	6,'2-',0
+	DB	6,50,38,1FH
+	DB	6,50,39,'****** BITS/CHAR RECEIVER ******',0AH,0DH
+	DB	6,49,41,5,'1: 5 BITS',0AH,0DH
+	DB	6,49,43,5,'3: 7 BITS',0AH,0DH
+	DB	6,49,42,5,'2: 6 BITS',0AH,0DH
+	DB	6,49,44,5,'4: 8 BITS',0AH,0DH
+	DB	6,50,45,0
 	
 CURSORMSG:	
-	DB	6,'2%',1FH
-	DB	6,'2%*** CURSOR ***',0AH,0DH
-	DB	6,'2',27H,'**** MENU ****',0AH,0DH
-	DB	6,'2(1: FORMAT',0AH,0DH
-	DB	6,'2)2: ADDRESSING',0AH,0DH
-	DB	6,'2*',0
+	DB	6,50,37,1FH
+	DB	6,50,37,'*** CURSOR ***',0AH,0DH
+	DB	6,50,39,'**** MENU ****',0AH,0DH
+	DB	6,50,40,'1: FORMAT',0AH,0DH
+	DB	6,50,41,'2: ADDRESSING',0AH,0DH
+	DB	6,50,42,0
 	
 CURSADDRMSG:	
-	DB	6,'2&',1FH
-	DB	6,'2',27H,'****** ADDRESSING ******',0AH,0DH
-	DB	6,'1)',5,'1: H,V',0AH,0DH
-	DB	6,'1*',5,'2: V,H',0AH,0DH
-	DB	6,'2+',0
-	
+	DB	6,50,38,1FH
+	DB	6,50,39,'****** ADDRESSING ******',0AH,0DH
+	DB	6,49,41,5,'1: H,V',0AH,0DH
+	DB	6,49,42,5,'2: V,H',0AH,0DH
+	DB	6,50,43,0
+
 CHOICEMSG:	
-	DB	6,'27CHOICE: ',0
+	DB	6,50,55,'CHOICE: ',0
 	
 STOPTIME1MSG:	
-	DB	6,'2%',1FH
-	DB	6,'2%***** MINI MOTOR STOP TIMER *****',0AH,0DH
-	DB	6,'2',27H,'CURRENT VALUE IS: '
+	DB	6,50,37,1FH
+	DB	6,50,37,'***** MINI MOTOR STOP TIMER *****',0AH,0DH
+	DB	6,50,39,'CURRENT VALUE IS: '
 	DB	0
 STOPTIME2MSG:	
 	DB	' SECONDS',0AH,0DH
-	DB	6,'2)SELECT NEW VALUE (RANGE 5-1200 SECONDS).',0AH,0DH
+	DB	6,50,41,'SELECT NEW VALUE (RANGE 5-1200 SECONDS).',0AH,0DH
 	DB	0
 
 DRIVE:	
