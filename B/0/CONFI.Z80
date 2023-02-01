@@ -134,8 +134,8 @@ PRINTSETUP:
 	CALL	JUMPJPTABLE
 	DW	PRINTSTOPBIT
 	DW	PRINTPARITY
-	DW	PRINTBAUDRAT
-	DW	PRINTSENDSIZ
+	DW	PRINTBAUDRATE
+	DW	PRINTSENDSIZE
 	DW	PRINTRECSIZE
 
 
@@ -232,14 +232,14 @@ SETCTC0:
 	RET
 
 
-PRINTBAUDRAT:	
+PRINTBAUDRATE:	
 	LD	HL,CURPRINTBAUD
 	CALL	BAUDRATE
 	RET	NC
-	LD	A,C
+	LD	A,C			; CBPRINTBAUD = TIMECONSTANTS[selection]
 	LD	(CBPRINTBAUD),A
-	LD	A,(CBPREG4)		; set bit 7 of CBPREG4
-	AND	03FH
+	LD	A,(CBPREG4)		; set bit 6..7 of Z80SIO CBPREG4 to either X16
+	AND	03FH			; or X64 from CLOCKRATES[selection]
 	ADD	A,B
 	LD	(CBPREG4),A
 	RET
@@ -247,8 +247,8 @@ PRINTBAUDRAT:
 Z80CTCSIOB:	EQU 	0DH		; page 20ff
 
 SETCTC1:	
-	LD	A,01000111B	;PRINTER BAUD RATE
-	OUT	(Z80CTCSIOB),A
+	LD	A,01000111B		;PRINTER BAUD RATE
+	OUT	(Z80CTCSIOB),A		; SIO B CTC: Reset, no int, counter mode, Time Constant follows
 	LD	A,(CBPRINTBAUD)
 	OUT	(Z80CTCSIOB),A
 	RET
@@ -256,7 +256,7 @@ SETCTC1:
 
 BAUDRATE:	
 	PUSH	HL
-	LD	A,(HL)
+	LD	A,(HL)		; current = [CURxBAUD]
 	LD	HL,BAUDRATEMSG
 	LD	DE,1
 	LD	BC,11
@@ -266,14 +266,14 @@ BAUDRATE:
 	PUSH	DE
 	DEC	HL
 	EX	DE,HL
-	LD	HL,L0D6A
+	LD	HL,TIMECONSTANTS
 	ADD	HL,DE
-	LD	C,(HL)
-	LD	HL,L0D5F
+	LD	C,(HL)		; C= CTC Time constant for selection
+	LD	HL,CLOCKRATES
 	ADD	HL,DE
-	LD	B,(HL)
+	LD	B,(HL)		; B = SIO slowdown (X16, X64) from CLOCKRATES[selection]
 	POP	HL
-	LD	(HL),A
+	LD	(HL),A		; [CURxBAUD] = selection
 	SCF
 	RET
 
@@ -316,7 +316,7 @@ TERMRECSIZE:
 	RET
 
 
-PRINTSENDSIZ:	
+PRINTSENDSIZE:	
 	LD	HL,CBPREG5
 	CALL	SENDSIZE
 CHARSIZE:	
@@ -1054,13 +1054,36 @@ STOPTIME2MSG:
 DRIVE:	
 	DB	0
 
-L0D5F:	
-	DB	0C0H,0C0H,0C0H,0C0H,0C0H,40H,40H
-	DB	40H,40H,40H,40H
+; See the RC702 Hardware manual for details on how the 0.614 MHz clock
+; is first scaled down in the Z80 CTC and then additionally scaled down
+; in the Z80 SIO to get to the desired baud rate.
+;
+; Interestinly the numbers are slightly off from
+; the values coming from calculating 614000/64/50 to get 50 baud. (191,88
+; instead of 193 etc.)
+;
+; Note that fig. 2.3.13 on page 25 has different values for 9600 and 19200.
+;
+X16:	EQU	40H
+X64:	EQU	0C0H
 
-L0D6A:	
-	DB	0C1H,80H,58H,40H,20H,40H,20H
-	DB	10H,08H,04H,02H
+CLOCKRATES:	; additional downscaling inside the Z80 SIO
+	DB	X64,X64,X64,X64,X64
+	DB	X16,X16,X16,X16,X16,X16
+
+TIMECONSTANTS:	; initial downscaling in the Z80 CTC
+	DB	193 	; 50
+	DB 	128 	; 75
+	DB	88  	; 110
+	DB	64  	; 150
+	DB	32  	; 300
+
+	DB 	64	; 600
+	DB	32	; 1200
+	DB 	16	; 2400
+	DB	8	; 4800
+	DB	4 	; 9600
+	DB	2	; 19200
 
 CBBLOCK1	equ $
 cbblock3	equ $+2*128
@@ -1073,32 +1096,86 @@ CBPRINTBAUD:
 	DB	0,0,0,0,0
 ;
 ;
+;========================================================
+;= Z80 SIO CONTROLLER                                   =
+;========================================================
+;
+; http://www.jbox.dk/rc702/hardware/zilog-um0081.pdf
+; pages 272ff
 CBTERM:	
 	DB	0,0
-
-; 00001100 = stopbits
-; 11000000 = baud
-; 00000011 = parity
+;PSIOA: 	
+;	DB 018H		; CHANNEL RESET, table 13, page 275
+;	DB 004H		; SELECT WR4, table 22, page 285
+; 11000000 = clock rate, 00=x1, 01=x16, 10=x32, 11=x64 - see CLOCKRATES
+; 00110000 = sync modes, 00=8-bit, 01=16-bit, 10=SLDC, 11=external
+; 00001100 = stopbits, 00=sync modes, 01=1, 10=1.5, 11=2
+; 00000011 = parity, 00=no, 01=odd, 10=no, 11=even 
 
 CBTREG4:	
 	DB	0,0
+;	DB 047H		; 1 STOP BIT,EVEN PARITY,16*CLOCK
+;	DB 003H		; SELECT WR3, figure 117, page 284
+;
+; 11000000 = bits pr character (00=5, 01=6, 10=7, 11=8)
+; 00100000 = auto enables - DCD and CTS enable transmission
+; 00010000 = hunt phase
+; 00001000 = Rx CRC enable (SLDC)
+; 00000100 = Adress search mode. (SLDC)
+; 00000010 = SYNC character load inhibit
+; 00000001 = Rx enable
 CBTREG3:	
 	DB	0,0
+;	DB 061H		; REC,AUTO ENABLE. 7 BITS/CHARACTER
+;	DB 005H		; SELECT WR5, table 26, page 287
+;
+; 7 = DTR
+; 5..6 = Tx bits, 00=5 or less, 01=7, 10=6, 11=8
+; 4 = send break
+; 3 = Tx enable
+; 2 = CRC-16/SDLC
+; 1 = RTS,  
+; 0 = Tx CRC enable
+; 
 CBTREG5:	
 	DB	0,0,0
+;	DB 020H		; RTS,DTR,XMIT DISABLE. 7 BITS/CHARACTER
+;	DB 001H		; SELECT WR1, figure 115, page 277
 ;
+; 7 = wait/ready enable
+; 6 = wait/ready function
+; 5 = wait/ready on receive transmit
+; 3..4 = receive interrupt mode, 11=interrupt on all received characters
+; 2 = status affects vector
+; 1 = transmit interrupt enable (interrupt when transmit buffer is empty)
+; 0 = enable external interrupts
+;
+;	DB 01BH		; ENABLE REC,XMIT AND EXT.STATUS.
+
+
 ;
 CBPRINT:	
 	DB	0,0,0,0
+; PSIOB:	DB 018H		; CHANNEL RESET
+;	DB 002H		; SELECT WR2, table 19, page 281
+;	DB 010H		; INTERRUPT VECTOR
+;	DB 004H		; SELECT WR4
 CBPREG4:	
 	DB	0,0
+;	DB 047H		; 1 STOP BIT,EVEN PARITY,16*CLOCK  
+;	DB 003H		; SELECT WR3
 CBPREG3:	
 	DB	0,0
+;	DB 060H		; AUTO ENABLE,REC 7 BITS/CHAR,REC DISABLE.
+;	DB 005H		; SELECT WR5
 CBPREG5:	
 	DB	0
-;
-;
-	DB	0,0,0,0,0,0
+;	DB 020H		; RTS,XMIT,DTR DISABLE. 7 BITS/CHARACTER
+	DB	0,0
+;	DB 001H		; SELECT WR1
+;	DB 01FH		; ENABLE REC,XMIT AND EXT.STATUS. STATUS AFFECTS VECTOR
+
+	DB	0,0,0,0
 
 ; 7: spaced rows
 ; 0..6: horizontal characters per row, max 80
