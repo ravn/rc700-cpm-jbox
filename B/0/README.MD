@@ -1,10 +1,15 @@
 Downloaded files from http://www.jbox.dk/rc702/source/
 
+
 # Documentation
 
 Z80 book: http://www.z80.info/zip/programming_the_z80_3rd_edition.pdf
 
 Z80ASM manual:  https://oldcomputers.dyndns.org/public/pub/manuals/z80asm.pdf
+
+Z80ASM distribution: https://deramp.com/downloads/mfe_archive/040-Software/SLR%20Systems/Z80ASM/
+
+(Including Z80ASM manual and MAKESYM.DOC)
 
 RASM manual: http://www.roudoudou.com/rasm/rasm_v112_en.pdf
 
@@ -92,10 +97,18 @@ Original is in CONFIORG.COM.  Note:  This is one I appear to have patched back t
 
 Old, almost complete disassembly in CONFI.Z80 (using Z80ASM instead of M80)
 
+
+
 ```
 z80asm confi/fxs
+makesym confi
+zsid confi.com confi.sym
+l.start
+
 ```
-(cannot generate symbol file)
+
+
+
 
 RASM (https://github.com/EdouardBERGE/rasm) assembles but it is unclear how to create symbol file for ZSID. 
 

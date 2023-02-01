@@ -6,8 +6,9 @@
 ;
 ; RASM+Z80ASM'ED 030131 (The one coming with RunCPM)
 ;
-; ~/git/rasm/rasm -ob CONFI.COM CONFI.Z80; diff CONFIORG.COM CONFI.COM -s
-
+; MacOS command line:
+;
+; ~/git/rasm/rasm -ob CONFI.COM CONFI.Z80; cmp -l CONFI.COM CONFIORG.COM | awk '{printf "%08X %02X %02X\n", $1 + 256,$2, $3}'
 	.z80
 
 ; BIOS locations - https://www.seasip.info/Cpm/bios.html
@@ -16,8 +17,11 @@
 ADRMOD:	EQU	0DA33H	; ADDRESS MODE = XY
 WR5A:	EQU	0DA34H	; ?
 WR5B:	EQU 	0DA35H	; ?
-FD0:	EQU	0DA37H	; Floppy config, see CPMBOOT.MAC
+FD0:	EQU	0DA37H	; Floppy config, see CPMBOOT.MAC line 34ff.
 FDTIM0:	EQU	0FFE7H
+
+; The RC700 BIOS location is hardcoded to DA00.
+; This allows adding a mock BIOS under RunCPM for testing.
 
 BIOSWBOOT:	EQU	0DA03H
 
@@ -28,6 +32,12 @@ BIOSSETS:	EQU	0DA21H
 BIOSSETD:	EQU	0DA24H
 BIOSXREAD:	EQU	0DA27H
 BIOSXWRITE:	EQU	0DA2AH
+
+;
+; Z80SIO commands:
+; http://www.jbox.dk/rc702/hardware/zilog-um0081.pdf
+; (page 272ff)
+
 
 	ORG	100H
 	DS	256
@@ -61,7 +71,7 @@ DISKOK:
 	SUB	'A'
 	LD	(DRIVE),A
 	XOR	A
-	CALL	READCB
+	CALL	RWCB		; A=0 -> Read configuration block
 	CALL	MAINMENU
 LEAVE:	
 	LD	C,2	;CLEAR SCREEN
@@ -140,12 +150,13 @@ PRINTSTOPBIT:
 
 
 STOPBIT:	
-	LD	A,(HL)
+	LD	A,(HL)	
 	PUSH	HL
 	RRCA
 	RRCA
 	AND	3
-	DEC	A
+	DEC	A		; CURRENT = (([CBxREG4] >> 2) & 3) - 1
+
 	LD	HL,STOPBITSMSG
 	LD	DE,1
 	LD	BC,3
@@ -153,13 +164,14 @@ STOPBIT:
 	POP	DE
 	RET	NC
 	PUSH	DE
-	LD	A,L
+
+	LD	A,L		
 	RLCA
 	RLCA
-	LD	B,A
+	LD	B,A		; B=low(CMDNUMBER) << 2
 	POP	HL
-	LD	A,(HL)
-	AND	0F3H
+	LD	A,(HL)		; [CBxREG4] = ([CBxREG4] & 11110011b ) | B
+	AND	11110011B
 	ADD	A,B
 	LD	(HL),A
 	RET
@@ -177,7 +189,8 @@ PARITY:
 	LD	A,(HL)
 	PUSH	HL
 	INC	A
-	AND	3
+	AND	3		; CURRENT = (([CBxREG4] +1) & 3)
+
 	LD	HL,PARITYMSG
 	LD	DE,1
 	LD	BC,3
@@ -185,14 +198,16 @@ PARITY:
 	POP	DE
 	RET	NC
 	PUSH	DE
+
 	LD	A,L
 	XOR	2
-	LD	B,A
+	LD	B,A		; B = low(CMDNUMBER) ~ 2 (bug?)
 	POP	HL
 	LD	A,(HL)
 	AND	0FCH
 	ADD	A,B
-	LD	(HL),A
+	LD	(HL),A		; [CBxREG4] = ([CBxREG4] & 11111100b ) | B
+
 	RET
 
 
@@ -203,17 +218,17 @@ TERMBAUDRATE:
 	LD	A,C
 	LD	(CBTERMBAUD),A
 	LD	A,(CBTREG4)
-	AND	'?'
+	AND	00111111B
 	ADD	A,B
 	LD	(CBTREG4),A
 	RET
 
-
+Z80CTCSIOA:	EQU 	0CH		; page 20ff
 SETCTC0:	
-	LD	A,'G'	;TERMINAL BAUD RATE
-	OUT	(0CH),A
-	LD	A,(CBTERMBAUD)
-	OUT	(0CH),A
+	LD	A,01000111B		; SIO A CTC: Reset, no int, counter mode, Time Constant follows
+	OUT	(Z80CTCSIOA),A
+	LD	A,(CBTERMBAUD)		; SIO A BAUD RATE:  1..256
+	OUT	(Z80CTCSIOA),A
 	RET
 
 
@@ -223,18 +238,19 @@ PRINTBAUDRAT:
 	RET	NC
 	LD	A,C
 	LD	(CBPRINTBAUD),A
-	LD	A,(CBPREG4)
-	AND	'?'
+	LD	A,(CBPREG4)		; set bit 7 of CBPREG4
+	AND	03FH
 	ADD	A,B
 	LD	(CBPREG4),A
 	RET
 
+Z80CTCSIOB:	EQU 	0DH		; page 20ff
 
 SETCTC1:	
-	LD	A,'G'	;PRINTER BAUD RATE
-	OUT	(0DH),A
+	LD	A,01000111B	;PRINTER BAUD RATE
+	OUT	(Z80CTCSIOB),A
 	LD	A,(CBPRINTBAUD)
-	OUT	(0DH),A
+	OUT	(Z80CTCSIOB),A
 	RET
 
 
@@ -243,7 +259,7 @@ BAUDRATE:
 	LD	A,(HL)
 	LD	HL,BAUDRATEMSG
 	LD	DE,1
-	LD	BC,0BH
+	LD	BC,11
 	CALL	MENU
 	POP	DE
 	RET	NC
@@ -262,10 +278,13 @@ BAUDRATE:
 	RET
 
 
+Z80SIOCONTROLA	EQU	0AH
+Z80SIOCONTROLB	EQU	0BH
+
 SETSIOA:	
-	LD	HL,CBTERM	;TERMINAL PORT 
-	LD	B,9
-	LD	C,0AH
+	LD	HL,CBTERM	;TERMINAL PORT CONFIGURATION
+	LD	B,9		;Configure Z80 SIOA with 9 bytes at CBTERM
+	LD	C,Z80SIOCONTROLA 
 	DI
 	OTIR
 	EI
@@ -274,8 +293,8 @@ SETSIOA:
 
 SETSIOB:	
 	LD	HL,CBPRINT	;PRINTER PORT
-	LD	B,0BH
-	LD	C,0BH
+	LD	B,11		;Configure Z80 SIOA with 11 bytes at CBPRINT
+	LD	C,Z80SIOCONTROLB
 	DI
 	OTIR
 	EI
@@ -317,7 +336,7 @@ SENDSIZE:
 	RLCA
 	RLCA
 	RLCA
-	AND	3
+	AND	3		; Current = bit 5..6 of [CBxREG5] 
 	LD	HL,BITS2SENDMSG
 	LD	DE,1
 	LD	BC,4
@@ -325,7 +344,7 @@ SENDSIZE:
 	POP	DE
 	RET	NC
 	PUSH	DE
-	RRCA
+	RRCA			; FIXME:  Magic to put the selection back in [CBxREG5]
 	JP	NC,L02CC
 	CCF
 	ADD	A,2
@@ -351,7 +370,7 @@ RECSIZE:
 	PUSH	HL
 	RLCA
 	RLCA
-	AND	3
+	AND	3		; Current = bit 6..7 of [CBxREG3]
 	LD	HL,RECSIZEMSG
 	LD	DE,1
 	LD	BC,4
@@ -359,7 +378,7 @@ RECSIZE:
 	POP	DE
 	RET	NC
 	PUSH	DE
-	RRCA
+	RRCA			; FIXME: Magic to put selection back in [CBxREG3]
 	JP	NC,L02F6
 	CCF
 	ADD	A,2
@@ -372,7 +391,7 @@ L02F6:
 	LD	B,A
 	POP	HL
 	LD	A,(HL)
-	AND	'?'
+	AND	03FH
 	ADD	A,B
 	LD	(HL),A
 	RET
@@ -382,7 +401,7 @@ L02F6:
 ;
 
 
-KBSETUP:	
+KBSETUP:			; Select language mapping and copy it to working area.
 	LD	HL,KBMSG
 	LD	A,(CBLANGUAGE)
 	LD	DE,1
@@ -390,7 +409,7 @@ KBSETUP:
 	CALL	MENU
 	RET	NC
 	LD	(CBLANGUAGE),A
-	LD	HL,KBDANISH
+	LD	HL,KBDANISH	; HL = KBDANISH + 0180H * (Selected - 1) 
 	LD	BC,0180H
 KBLOOP1:	
 	DEC	A
@@ -403,7 +422,7 @@ MOVEKBCONFIG:
 	LDIR
 	RET
 
-SETKBMEMORY:	
+SETKBMEMORY:			; Copy current language mapping to working area.
 	LD	A,(CBLANGUAGE)
 	LD	HL,KBDANISH
 	LD	BC,0180H
@@ -438,35 +457,48 @@ CURSORFORM:
 	RET	NC
 	LD	A,L
 	DEC	A
-	LD	(CBCURSOR),A
-	AND	3
+	LD	(CBCURSOR),A	
+	AND	3		; set bit 4..5 of [CBVIDEO4] to selection
 	RLCA
 	RLCA
 	RLCA
 	RLCA
 	LD	C,A
-	LD	A,(CBVIDEO4)
-	AND	0CFH
+	LD	A,(CBVIDEO4)	
+	AND	11001111B
 	OR	C
 	LD	(CBVIDEO4),A
 	RET
 
 
+; Intel 8275 Programmable CRT Controller
+; 
+; http://www.jbox.dk/rc702/hardware/intel-8275.pdf
+; Scan, complete (page 16ff has commands): 
+;
+; http://www.elektronikjk.pl/elementy_czynne/IC/8275.pdf
+; Searchable, incomplete (page 3 has commands):  
+
+
+
+I8275DATAPORT	EQU 00H
+I8275CMDPORT	EQU 01H
+
 SETVIDEO:	
-	LD	A,'@'
-	OUT	(01H),A
-	LD	A,0
-	OUT	(01H),A
+	LD	A,01000000B		; Stop display.
+	OUT	(I8275CMDPORT),A
+	LD	A,0			; Reset and send 4 data bytes for configuration
+	OUT	(I8275CMDPORT),A
 	LD	A,(CBVIDEO1)
-	OUT	(00H),A
+	OUT	(I8275DATAPORT),A
 	LD	A,(CBVIDEO2)
-	OUT	(00H),A
+	OUT	(I8275DATAPORT),A
 	LD	A,(CBVIDEO3)
-	OUT	(00H),A
+	OUT	(I8275DATAPORT),A
 	LD	A,(CBVIDEO4)
-	OUT	(00H),A
-	LD	A,'#'
-	OUT	(01H),A
+	OUT	(I8275DATAPORT),A
+	LD	A,00100011B		; Start display
+	OUT	(I8275CMDPORT),A	; (0 clocks between DMA requests, 8 DMA cycles per burst) (FIXME: Validate DMA setup)
 	RET
 ;
 ;
@@ -481,10 +513,9 @@ CURSXB4Y:
 	LD	(CBXB4Y),A
 	LD	(ADRMOD),A
 	RET
-;
-;
-;
-;
+
+; Stop time for mini floppy motor.  Stored as ticks in FDTIM0.
+
 STOPTIME:	
 	LD	HL,STOPTIME1MSG
 	CALL	PRINTMENU
@@ -493,17 +524,17 @@ STOPTIME:
 	CALL	PRINTHLDEC
 	LD	HL,STOPTIME2MSG
 	LD	DE,5
-	LD	BC,04B0H	;1200
+	LD	BC,1200
 	CALL	MENU
 	RET	NC
 	CALL	MULT50HL
-	LD	(FDTIM0),HL
+	LD	(FDTIM0),HL	
 	LD	(CBSTOPTIME),HL
 	RET
 
 SAVECB:	
 	LD	A,1
-	CALL	READCB
+	CALL	RWCB
 	RET
 
 ; If A==0 read sector, otherwise write sector.
@@ -525,8 +556,9 @@ CHECKRWRES:
 ; Read Configuration Block.
 ; 8" drives are temporarily set to 0: SS,128 B/S,25 S/T 
 ; 5,25" drives are temporarily set to 16: DD,512 B/S,20 S/T
-
-READCB:	
+;
+; This is mislabeled.   A=0 for read, A=1 for write
+RWCB:	
 	PUSH	AF
 	LD	A,(DRIVE)
 	CP	2
@@ -601,23 +633,23 @@ DONEHD:
 	CALL	BIOSSELD
 	RET
 MULT10HL:	
-	ADD	HL,HL
-	LD	D,H
+	ADD	HL,HL		; Calculate 2*HL and 8*HL and add them.
+	LD	D,H		
 	LD	E,L
 	ADD	HL,HL
-	ADD	HL,HL
-	ADD	HL,DE
+	ADD	HL,HL		
+	ADD	HL,DE		
 	RET
 MULT50HL:	
-	CALL	MULT10HL
+	CALL	MULT10HL	; Calculate 10*HL and 40*HL and add them.
 	LD	D,H
 	LD	E,L
 	ADD	HL,HL
 	ADD	HL,HL
 	ADD	HL,DE
 	RET
-HLDIV50:	
-	LD	DE,1
+HLDIV50:			; Count how many times we can add -50 to HL 
+	LD	DE,1		; before going negative, and return that in HL.
 	LD	BC,-50
 HLDIV50B:	
 	ADD	HL,BC
@@ -667,7 +699,7 @@ PRINTHL3:
 	JR	Z,PRINTHL4	 
 	LD	B,1		; non-zero digit, so don't suppress zeroes anymore
 PRINTHL4:	
-	XOR	A	;PRINT CHAR IN C, IFF B = 1
+	XOR	A		;Print char in C, iff B = 1
 	CP	B
 	PUSH	AF
 	PUSH	HL
@@ -682,9 +714,19 @@ PRINTHL4:
 	POP	AF
 	RET
 
-; HL = zero-terminated menu to print 
-; 
+
+; Print menu text recognizing 6 as gotoxy, and 
+; 5 as "print * if this is the selected value"
 ;
+; A = selected value
+; BC = minimal value accepted 
+; DE = maximum value accepted
+; HL = pointer to zero-terminated menu text
+; 
+; Accept a numeric user response, which is parsed and checked if it is
+; in range.  If not, an value invalid message is printed, and the user reprompted.
+;
+; Returns HL=CMDNUMBER, A=low(CMDNUMBER)-1 (flags set)
 ;
 MENU:	
 	PUSH	DE
@@ -738,7 +780,7 @@ MENUCHECKCMD:
 	SBC	HL,BC
 	JP	NC,BADCHOICE
 	ADD	HL,BC
-	LD	A,L
+	LD	A,L		; HL=CMDNUMBER, A=low(CMDNUMBER) - 1 (flags set)
 	DEC	A
 	SCF
 PRINTCRLF:	
@@ -812,7 +854,8 @@ PRINTNEXTHL:
 	JP	PRINTPLAINCH
 PRINTSPACE:	
 	LD	A,' '
-PRINTPLAINCH:	
+PRINTPLAINCH:			; Apparently 1FH (clear to end of screen) cannot be printed by BDOS 
+				; so must be sent directly to BIOS (this may be wrong)
 	CP	1FH
 	JR	Z,PRINTBIOS
 PRINTBDOS:	
@@ -1032,6 +1075,11 @@ CBPRINTBAUD:
 ;
 CBTERM:	
 	DB	0,0
+
+; 00001100 = stopbits
+; 11000000 = baud
+; 00000011 = parity
+
 CBTREG4:	
 	DB	0,0
 CBTREG3:	
@@ -1051,15 +1099,26 @@ CBPREG5:
 ;
 ;
 	DB	0,0,0,0,0,0
+
+; 7: spaced rows
+; 0..6: horizontal characters per row, max 80
 CBVIDEO1:	
 	DB	0
+; 6..7: vertical trace row count
+; 0..5: vertical rows per frame, max 64
 CBVIDEO2:	
 	DB	0
+; 4..7: line underline placement
+; 0..3: lines per character row 
 CBVIDEO3:	
 	DB	0
+; 7: line counter offset, 0=none, 1=one.
+; 6: field attribute transparent (doesn't use a visible character cell), 0=yes, 1=no
+; 4..5: cursor shape, 00=blink reverse block, 01=blink underscore, 10=reverse block, 11=underscore
+; 0..3: horisontal retrace count
 CBVIDEO4:	
 	DB	0
-;G=(BLINKREVERSE, BLINKUNDERSCORE, REVERSE, UNDERSCORE), H=HORIZONTAL RET CO
+
 	DB	0
 	DB	0,0,0
 CBCURSOR:	
@@ -1089,7 +1148,7 @@ CBSTOPTIME:
 	DB	98H,3AH,0E5H,0EBH,0E9H,0D5H,0CDH
 	DB	0C8H,35H,0B7H,0CAH,0A2H,30H,11H
 	DB	8DH,38H,0CDH,0DEH
-CBKB:	
+CBKB:				; Current KB mapping, 128 char keyboard map, 256 char output map
 	DS	0180H
 STACK:	
 	DS	0080H
